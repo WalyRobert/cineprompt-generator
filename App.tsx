@@ -1,3 +1,6 @@
+import {findProvider} from './utils/aiProviders.mjs';
+import AISettingsPanel from './components/AISettingsPanel';
+import {analyzeText,type AISettings} from './services/aiClient';
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Camera, Video, Loader2, Copy, CheckCircle2, AlertCircle, Film, PenTool } from 'lucide-react';
 import { generateVideoPromptFromImage } from './services/geminiService';
@@ -5,6 +8,7 @@ import { validateImageFile } from './utils/images';
 import { InfoCard } from './components/InfoCard';
 
 export default function App() {
+ const [ai,setAI]=useState<AISettings|null>(null), generation=useRef(0), request=useRef<AbortController|null>(null);useEffect(()=>()=>request.current?.abort(),[]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string>('');
@@ -22,7 +26,7 @@ export default function App() {
   const handleDrop=(e:React.DragEvent)=>{e.preventDefault();const file=e.dataTransfer.files?.[0];if(file)void setImage(file);};
 
   const analyzeImage = async () => {
-    if (!imageFile) return;
+    if (!imageFile||!ai) return;const id=++generation.current,ctrl=new AbortController();request.current=ctrl;
 
     setLoading(true);
     setError(null);
@@ -43,13 +47,12 @@ export default function App() {
         reader.readAsDataURL(imageFile);
       });
 
-      const generatedPrompt = await generateVideoPromptFromImage(base64Data, imageFile.type, userTerms);
-      setPrompt(generatedPrompt);
+      const generatedPrompt = await generateVideoPromptFromImage(base64Data, imageFile.type, userTerms,ai,ctrl.signal);
+      if(id===generation.current)setPrompt(generatedPrompt);
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error?err.message:'Erro ao gerar prompt.');
+      if(id===generation.current)setError(err instanceof Error?err.message:'Erro ao gerar prompt.');
     } finally {
-      setLoading(false);
+      if(id===generation.current)setLoading(false);
     }
   };
 
@@ -81,12 +84,12 @@ export default function App() {
           </div>
           <div className="hidden md:flex items-center gap-2 text-sm text-indigo-200/70 bg-indigo-950/30 px-3 py-1.5 rounded-full border border-indigo-500/20">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-            Powered by Gemini 2.5
+            Provedor de IA configurável
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 md:py-12">
+      <main className="max-w-6xl mx-auto px-6 py-8 md:py-12"><details className="border rounded p-4 mb-6"><summary>Configurar IA para imagens</summary><AISettingsPanel capability="vision" value={ai} disabled={loading} onChange={s=>{generation.current++;request.current?.abort();setLoading(false);setError(null);setPrompt('');setAI(s);}}/></details><p className="text-sm my-3">IA para imagens: {ai?findProvider(ai.provider).name:'não configurada'}.</p>
         
         {/* Hero Text */}
         <div className="text-center mb-12 max-w-2xl mx-auto">
@@ -149,7 +152,7 @@ export default function App() {
                         Clique ou arraste aqui
                       </p>
                       <p className="text-slate-500 text-sm mt-2">
-                        JPG, PNG, WEBP (Máx 10MB)
+                        JPG, PNG, WEBP (Máx 5MB)
                       </p>
                     </div>
                   </div>
@@ -182,7 +185,7 @@ export default function App() {
 
               <button
                 onClick={analyzeImage}
-                disabled={!imageFile || loading}
+                disabled={!imageFile || loading || !ai}
                 className={`
                   w-full mt-6 py-4 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-3
                   ${!imageFile || loading 
@@ -282,7 +285,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="text-center py-8 text-slate-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} CinePrompt Generator. Developed with Google Gemini.</p>
+        <p>&copy; {new Date().getFullYear()} CinePrompt Generator. IA com provedor escolhido pelo usuário.</p>
       </footer>
     </div>
   );
